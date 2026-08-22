@@ -32,7 +32,7 @@ async function main() {
   let contactSpend = 0;
   let retrySpend = 0;
 
-  console.log(`\n💸 paisa-wapas — batch recovery run (${LIVE ? "LIVE (LLM)" : "offline scripted"} mode)`);
+  console.log(`\n💸 Recoup — batch recovery run (${LIVE ? "LIVE (LLM)" : "offline scripted"} mode)`);
   console.log(`Batch: ${failedMandates.length} failed mandates, ${rupees(failedMandates.reduce((s, m) => s + m.amount, 0))} at risk\n`);
 
   // ── Phase 1: contact + negotiate ────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
-  "name": "paisa-wapas",
+  "name": "recoup",
   "version": "0.1.0",
-  "description": "Hinglish voice recovery agent for failed UPI autopay mandates, with a promise-to-pay ledger and RBI-style compliance guardrails",
+  "description": "Recoup — AI revenue recovery agent for failed UPI autopay mandates, with Hinglish negotiation, a promise-to-pay ledger, and RBI-style compliance guardrails",
   "type": "module",
   "license": "MIT",
   "engines": {

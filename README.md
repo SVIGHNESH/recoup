@@ -1,8 +1,8 @@
-# paisa-wapas 💸
+# Recoup
 
-**Hinglish voice recovery agent with a promise-to-pay ledger** — built for the Razorpay Buildathon (Track 03: AI Revenue Recovery).
+**AI revenue recovery for failed UPI autopay mandates** — built for the Razorpay Buildathon (Track 03: AI Revenue Recovery).
 
-An agent that contacts customers with failed UPI autopay mandates, negotiates in natural Hinglish, extracts a promise-to-pay ("parso kar dunga"), resolves that vague phrase into a concrete retry timestamp, and executes a bounded, RBI-compliant recovery workflow — with measured money recovered across a batch and a full audit trail.
+Recoup finds revenue that is slipping away and wins it back: it detects failed mandates, negotiates with customers in natural Hinglish, extracts a promise-to-pay ("parso kar dunga"), resolves that vague phrase into a concrete retry timestamp, and executes a bounded, RBI-compliant recovery workflow — with measured money recovered across a batch and a full audit trail.
 
 ## The magic moment
 
