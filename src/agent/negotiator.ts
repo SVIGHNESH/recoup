@@ -1,17 +1,24 @@
 /**
  * The Hinglish negotiation agent.
  *
- * Live mode: Claude (claude-opus-5) drives a tool-use loop — it converses in
- * Hinglish and calls record_promise / mark_opt_out / escalate_dispute when the
- * customer commits, opts out, or disputes. A second Claude call plays the
- * customer, so a full call can be simulated end to end.
+ * Live mode: an LLM drives a tool-calling loop — it converses in Hinglish and
+ * calls record_promise / mark_opt_out / escalate_dispute when the customer
+ * commits, opts out, or disputes. A second LLM call plays the customer, so a
+ * full call can be simulated end to end.
+ *
+ * The client speaks the OpenAI-compatible chat API, so any free provider works
+ * via env vars (defaults target Google Gemini's free tier):
+ *   LLM_API_KEY   — free key from https://aistudio.google.com/apikey
+ *   LLM_BASE_URL  — default Gemini; use https://api.groq.com/openai/v1 for Groq
+ *                   or http://localhost:11434/v1 for Ollama
+ *   LLM_MODEL     — default gemini-2.5-flash (Groq: llama-3.3-70b-versatile)
  *
  * Offline mode: deterministic scripted personas produce the same wire format
  * (transcript + final customer utterance), so the whole downstream pipeline —
  * Hinglish time parsing, compliance clamps, ledger, scheduler — runs identically
- * without an API key.
+ * without any API key.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type { Customer, FailedMandate } from "../core/types.js";
 
 export interface Turn {
@@ -28,6 +35,15 @@ export interface NegotiationResult {
     | { kind: "no_commitment" };
 }
 
+export function makeLlmClient(): OpenAI {
+  return new OpenAI({
+    apiKey: process.env.LLM_API_KEY ?? process.env.GEMINI_API_KEY ?? "",
+    baseURL: process.env.LLM_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta/openai/",
+  });
+}
+
+const MODEL = process.env.LLM_MODEL ?? "gemini-2.5-flash";
+
 const AGENT_SYSTEM = `You are "Asha", a polite recovery agent calling on behalf of a merchant about a failed UPI autopay payment. You speak natural Hinglish (Hindi in Latin script mixed with English), warm and respectful — never threatening, never pushy. RBI conduct rules apply: no harassment, no repeated pressure, accept a refusal gracefully.
 
 Your goals, in order:
@@ -38,72 +54,73 @@ Your goals, in order:
 
 Keep each message to 1-3 short sentences. End the call politely after any tool call.`;
 
-const tools: Anthropic.Tool[] = [
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
-    name: "record_promise",
-    description:
-      "Record the customer's promise-to-pay. Call this the moment the customer gives any time commitment, quoting their exact words.",
-    strict: true,
-    input_schema: {
-      type: "object",
-      properties: {
-        exact_phrase: { type: "string", description: "The customer's exact Hinglish words, e.g. 'parso shaam ko kar dunga'" },
+    type: "function",
+    function: {
+      name: "record_promise",
+      description:
+        "Record the customer's promise-to-pay. Call this the moment the customer gives any time commitment, quoting their exact words.",
+      parameters: {
+        type: "object",
+        properties: {
+          exact_phrase: { type: "string", description: "The customer's exact Hinglish words, e.g. 'parso shaam ko kar dunga'" },
+        },
+        required: ["exact_phrase"],
       },
-      required: ["exact_phrase"],
-      additionalProperties: false,
     },
   },
   {
-    name: "mark_opt_out",
-    description: "Customer asked not to be contacted again. Recovery activity must stop immediately.",
-    strict: true,
-    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    type: "function",
+    function: {
+      name: "mark_opt_out",
+      description: "Customer asked not to be contacted again. Recovery activity must stop immediately.",
+      parameters: { type: "object", properties: {} },
+    },
   },
   {
-    name: "escalate_dispute",
-    description: "Customer disputes the charge itself (wrong amount, cancelled subscription, fraud claim). Hand off to a human.",
-    strict: true,
-    input_schema: {
-      type: "object",
-      properties: { reason: { type: "string", description: "One-line summary of the dispute" } },
-      required: ["reason"],
-      additionalProperties: false,
+    type: "function",
+    function: {
+      name: "escalate_dispute",
+      description: "Customer disputes the charge itself (wrong amount, cancelled subscription, fraud claim). Hand off to a human.",
+      parameters: {
+        type: "object",
+        properties: { reason: { type: "string", description: "One-line summary of the dispute" } },
+        required: ["reason"],
+      },
     },
   },
 ];
 
-const MODEL = "claude-opus-5";
-
 async function customerReply(
-  client: Anthropic,
+  client: OpenAI,
   customer: Customer,
   mandate: FailedMandate,
   transcript: Turn[],
 ): Promise<string> {
   const persona = `You are ${customer.name}, an Indian customer whose UPI autopay of ₹${(mandate.amount / 100).toFixed(0)} to ${mandate.merchant} failed (${mandate.failureCode}). Reply in natural Hinglish, 1-2 sentences, like a real phone call. Be initially evasive ("haan dekh lunga"), but if the agent is polite and asks for a specific time, commit with a vague-but-real phrase like "parso kar dunga" or "salary aane ke baad pakka". Stay in character; output only your spoken reply.`;
-  const response = await client.messages.create({
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 200,
-    system: persona,
     messages: [
+      { role: "system", content: persona },
       {
         role: "user",
         content: `Call so far:\n${transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n")}\n\nYour reply:`,
       },
     ],
   });
-  if (response.stop_reason === "refusal") return "haan theek hai, dekh lunga";
-  const text = response.content.find((b) => b.type === "text");
-  return text?.type === "text" ? text.text.trim() : "haan theek hai";
+  return response.choices[0]?.message?.content?.trim() || "haan theek hai, dekh lunga";
 }
 
 export async function negotiateLive(
-  client: Anthropic,
+  client: OpenAI,
   customer: Customer,
   mandate: FailedMandate,
 ): Promise<NegotiationResult> {
   const transcript: Turn[] = [];
-  const messages: Anthropic.MessageParam[] = [
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: AGENT_SYSTEM },
     {
       role: "user",
       content: `New call. Customer: ${customer.name} (${customer.languagePref}). Failed payment: ₹${(mandate.amount / 100).toFixed(0)} to ${mandate.merchant}, reason ${mandate.failureCode}. The customer has just picked up. Begin the call.`,
@@ -111,44 +128,43 @@ export async function negotiateLive(
   ];
 
   for (let turn = 0; turn < 8; turn++) {
-    const response = await client.messages.create({
+    const response = await client.chat.completions.create({
       model: MODEL,
       max_tokens: 1024,
-      system: AGENT_SYSTEM,
-      tools,
       messages,
+      tools,
     });
 
-    if (response.stop_reason === "refusal") {
-      return { transcript, outcome: { kind: "no_commitment" } };
+    const msg = response.choices[0]?.message;
+    if (!msg) return { transcript, outcome: { kind: "no_commitment" } };
+
+    if (msg.content?.trim()) {
+      transcript.push({ speaker: "agent", text: msg.content.trim() });
     }
 
-    for (const block of response.content) {
-      if (block.type === "text" && block.text.trim()) {
-        transcript.push({ speaker: "agent", text: block.text.trim() });
+    const toolCall = msg.tool_calls?.[0];
+    if (toolCall && toolCall.type === "function") {
+      let input: Record<string, string> = {};
+      try {
+        input = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        // keep empty input; fall through with sensible defaults
       }
-    }
-
-    const toolUse = response.content.find((b) => b.type === "tool_use");
-    if (toolUse && toolUse.type === "tool_use") {
-      const input = toolUse.input as Record<string, string>;
-      if (toolUse.name === "record_promise") {
-        return { transcript, outcome: { kind: "promise", phrase: input.exact_phrase } };
+      if (toolCall.function.name === "record_promise") {
+        return { transcript, outcome: { kind: "promise", phrase: input.exact_phrase ?? "" } };
       }
-      if (toolUse.name === "mark_opt_out") {
+      if (toolCall.function.name === "mark_opt_out") {
         return { transcript, outcome: { kind: "opt_out" } };
       }
-      if (toolUse.name === "escalate_dispute") {
+      if (toolCall.function.name === "escalate_dispute") {
         return { transcript, outcome: { kind: "dispute", reason: input.reason ?? "customer dispute" } };
       }
     }
 
-    if (response.stop_reason === "end_turn" && !toolUse) {
-      const reply = await customerReply(client, customer, mandate, transcript);
-      transcript.push({ speaker: "customer", text: reply });
-      messages.push({ role: "assistant", content: response.content });
-      messages.push({ role: "user", content: `Customer says: "${reply}"` });
-    }
+    const reply = await customerReply(client, customer, mandate, transcript);
+    transcript.push({ speaker: "customer", text: reply });
+    messages.push({ role: "assistant", content: msg.content ?? "" });
+    messages.push({ role: "user", content: `Customer says: "${reply}"` });
   }
   return { transcript, outcome: { kind: "no_commitment" } };
 }

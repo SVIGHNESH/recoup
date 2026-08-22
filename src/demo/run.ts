@@ -6,12 +6,11 @@
  * Offline by default (scripted personas, no API key). Pass --live to have
  * Claude play both the agent and the customers (needs ANTHROPIC_API_KEY).
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { customers, failedMandates } from "../core/seed.js";
 import { parseHinglishWhen, formatIst } from "../core/hinglish-time.js";
 import { canContact, canRetryMandate, clampRetryTime, RULES } from "../core/compliance.js";
 import { Ledger } from "../core/ledger.js";
-import { negotiateLive, negotiateOffline, type NegotiationResult } from "../agent/negotiator.js";
+import { makeLlmClient, negotiateLive, negotiateOffline, type NegotiationResult } from "../agent/negotiator.js";
 import type { FailedMandate, PromiseToPay } from "../core/types.js";
 
 const LIVE = process.argv.includes("--live");
@@ -29,11 +28,11 @@ function paymentSucceeds(mandateId: string, attempt: number): boolean {
 
 async function main() {
   const ledger = new Ledger();
-  const client = LIVE ? new Anthropic() : null;
+  const client = LIVE ? makeLlmClient() : null;
   let contactSpend = 0;
   let retrySpend = 0;
 
-  console.log(`\n💸 paisa-wapas — batch recovery run (${LIVE ? "LIVE (Claude)" : "offline scripted"} mode)`);
+  console.log(`\n💸 paisa-wapas — batch recovery run (${LIVE ? "LIVE (LLM)" : "offline scripted"} mode)`);
   console.log(`Batch: ${failedMandates.length} failed mandates, ${rupees(failedMandates.reduce((s, m) => s + m.amount, 0))} at risk\n`);
 
   // ── Phase 1: contact + negotiate ────────────────────────────────────────

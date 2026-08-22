@@ -20,7 +20,7 @@ The agent turns it into a scheduled, compliant action:
 |---|---|---|
 | Hinglish time parser | `src/core/hinglish-time.ts` | Deterministic rules for `parso`, `kal shaam`, `somvar ko`, `do din baad`, `salary ke baad`, `25 tarikh ko`, and more — all resolved in IST |
 | Compliance guard | `src/core/compliance.ts` | Hard rules the agent cannot override: contact hours 08:00–19:00 IST, max 3 contacts/week, opt-out hard stop, max 3 mandate retries, 24h pre-debit notice, dispute freeze |
-| Negotiation agent | `src/agent/negotiator.ts` | Claude (`claude-opus-5`) drives a tool-use loop in Hinglish; tools: `record_promise`, `mark_opt_out`, `escalate_dispute`. A second Claude call plays the customer |
+| Negotiation agent | `src/agent/negotiator.ts` | A free-tier LLM (Gemini `gemini-2.5-flash` by default) drives a tool-calling loop in Hinglish; tools: `record_promise`, `mark_opt_out`, `escalate_dispute`. A second LLM call plays the customer |
 | Promise-to-pay ledger | `src/core/ledger.ts` | Every promise with the exact quoted phrase, resolved time, confidence, and status (pending/kept/broken/cancelled) |
 | Retry scheduler | `src/demo/run.ts` | Virtual clock executes retries exactly at promised times, handles broken promises with one bounded follow-up |
 | Audit trail | `data/audit-trail.json` | Append-only log: every action, the evidence, and the compliance rule that permitted or blocked it |
@@ -33,9 +33,14 @@ pnpm install
 # Offline demo — scripted Hinglish personas, no API key needed.
 pnpm demo
 
-# Live demo — Claude plays both the agent and the customers.
-export ANTHROPIC_API_KEY=sk-ant-...
+# Live demo — a free-tier LLM plays both the agent and the customers.
+# Default provider is Google Gemini: get a free key at https://aistudio.google.com/apikey
+export LLM_API_KEY=your-free-gemini-key
 pnpm demo:live
+
+# Other free providers (OpenAI-compatible), no code changes:
+#   Groq:   LLM_BASE_URL=https://api.groq.com/openai/v1 LLM_MODEL=llama-3.3-70b-versatile LLM_API_KEY=gsk_...
+#   Ollama: LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=llama3.1 LLM_API_KEY=ollama
 
 # Tests (Hinglish time parser)
 pnpm test
